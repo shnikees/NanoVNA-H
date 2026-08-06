@@ -42,7 +42,7 @@ the scan interpolates the calibration into each band automatically.
 
 **The band table is US / IARU Region 2.** Band edges differ in other regions, so
 if you are outside the US you will want to edit it. See
-**[docs/MULTI_SWR.md](docs/MULTI_SWR.md)** for how to change the bands, the star
+**[doc/MULTI_SWR.md](doc/MULTI_SWR.md)** for how to change the bands, the star
 thresholds, the colours and the scan speed, along with the screen-space and
 memory limits to watch for.
 
