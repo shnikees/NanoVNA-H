@@ -68,9 +68,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          find artifacts -type f \( -name '*.bin' -o -name '*.hex' \) -print
-          gh release create "${GITHUB_REF_NAME}" \
-            --repo "${GITHUB_REPOSITORY}" \
-            --title "${GITHUB_REF_NAME}" \
-            --generate-notes \
-            $(find artifacts -type f \( -name '*.bin' -o -name '*.hex' \))
+          FILES=$(find artifacts -type f \( -name '*.bin' -o -name '*.hex' \))
+          echo "$FILES"
+          # Idempotent: a release may already have been written by hand, so
+          # attach the binaries to it rather than failing. Only the assets are
+          # touched, leaving any hand-written notes alone.
+          if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "release ${GITHUB_REF_NAME} exists - uploading assets"
+            gh release upload "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --clobber $FILES
+          else
+            gh release create "${GITHUB_REF_NAME}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "${GITHUB_REF_NAME}" \
+              --generate-notes \
+              $FILES
+          fi
