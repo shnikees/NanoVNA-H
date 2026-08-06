@@ -117,6 +117,12 @@
 #define __S11_RESONANCE_MEASURE__
 // Enable S11 multi-band SWR (Multe-style quick multiband antenna check) option
 #define __S11_MULTI_SWR__
+// Which IARU band plan MULTI SWR scans. Change this one line to suit your region:
+//   1 = Region 1 (Europe, Africa, Middle East, northern Asia)
+//   2 = Region 2 (the Americas)          <- default
+//   3 = Region 3 (Asia-Pacific)
+// National allocations vary within every region; see doc/MULTI_SWR.md.
+#define MULTI_SWR_REGION 2
 #endif
 
 /*

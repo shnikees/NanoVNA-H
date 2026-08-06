@@ -12,12 +12,43 @@ dfu-util -d 0483:df11 -a 0 -s 0x08000000:leave -D build/H.bin
 
 ---
 
-## Changing the bands (IARU region, extra bands)
+## Switching IARU region — one line
 
-**The shipped band plan is US / IARU Region 2.** Band edges differ elsewhere —
-Region 1 (Europe/Africa) 80m is 3.500–3.800MHz rather than 3.5–4.0, 40m is
-7.000–7.200, and 902–928MHz is not an ISM allocation at all. Edit the table in
-`measure.c`:
+Band plans for all three IARU regions ship in the firmware. Pick one in
+[`nanovna.h`](../nanovna.h):
+
+```c
+#define MULTI_SWR_REGION 2   // 1, 2 or 3
+```
+
+| Value | Region | Notable differences |
+|-------|--------|---------------------|
+| `1` | Europe, Africa, Middle East, northern Asia | 80m 3.500–3.800, 40m 7.000–7.200, 6m to 52MHz, 2m to 146MHz, 70cm to 440MHz, **23cm** in place of 33cm |
+| `2` | The Americas (**default**) | 80m 3.500–4.000, 40m 7.000–7.300, 70cm to 450MHz, **33cm** (902–928, also ISM) |
+| `3` | Asia-Pacific | 80m 3.500–3.900, 40m 7.000–7.200, 70cm to 440MHz, **23cm** in place of 33cm |
+
+Regions 1 and 3 use the 15kHz WRC-15 60m allocation (5351.5–5366.5kHz) rather
+than the wider Region 2 one.
+
+> **You must `make clean` after changing this.** The build does not reliably
+> rebuild after a `nanovna.h` edit, and you will otherwise flash a binary that
+> still has the old band plan — which looks exactly like the setting being
+> ignored.
+
+Two caveats:
+
+- **These are the IARU band plans, not your licence.** National allocations vary
+  within every region — UK 5MHz, Japanese 40m, Australian 80m and the various
+  70cm sub-allocations all differ. Treat the table as a starting point and check
+  it against your own licence conditions.
+- **23cm (1240–1300MHz) is far outside the hardware's comfortable range.** It is
+  below the 2GHz firmware ceiling so it will sweep, but it is deep into harmonic
+  mode and the readings there are rough. Delete the row if you do not want it.
+
+## Changing the bands directly
+
+To go beyond the three built-in plans, edit the table in `measure.c` — the rows
+for the selected region sit under the matching `#if MULTI_SWR_REGION` branch:
 
 ```c
 static const struct {
@@ -52,12 +83,12 @@ Adding or removing a band needs no other change; everything sizes off
   223. **Two more bands will collide with the status line** — at that point
   raise `MULTI_SWR_TOP`, or drop the legend.
 
-Some regional examples:
+Some rows worth adding by hand:
 
 ```c
-  {"80m",  3500000,  3800000,  13},  // Region 1
-  {"40m",  7000000,  7200000,  11},  // Region 1
-  {"868MHz", 863000000, 870000000, 15},  // EU ISM
+  {"868MHz", 863000000,  870000000,  15},  // EU ISM / SRD
+  {"4m",     70000000,   70500000,   11},  // where allocated (UK, parts of R1)
+  {"WSPR20", 14095600,   14096600,    9},  // a narrow slice, if you want one
 ```
 
 Bands above **300MHz** are measured in si5351 harmonic mode and are noisier;

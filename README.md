@@ -40,11 +40,18 @@ the scan interpolates the calibration into each band automatically.
 
 ### Customising it
 
-**The band table is US / IARU Region 2.** Band edges differ in other regions, so
-if you are outside the US you will want to edit it. See
-**[doc/MULTI_SWR.md](doc/MULTI_SWR.md)** for how to change the bands, the star
-thresholds, the colours and the scan speed, along with the screen-space and
-memory limits to watch for.
+Band plans for all three IARU regions are built in; **Region 2 (the Americas) is
+the default**. Change one line in `nanovna.h` to switch:
+
+```c
+#define MULTI_SWR_REGION 2   // 1 = Europe/Africa, 2 = Americas, 3 = Asia-Pacific
+```
+
+(run `make clean` afterwards, or the old band plan is silently kept).
+
+See **[doc/MULTI_SWR.md](doc/MULTI_SWR.md)** for the region tables and for how to
+change the bands, the star thresholds, the colours and the scan speed, along with
+the screen-space and memory limits to watch for.
 
 ### Changed files
 
