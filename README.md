@@ -13,7 +13,7 @@ with stars instead of making you read a chart.
 ### What it does
 
 Select `MEASURE` -> `MULTI SWR (S11)`. The mode takes over the sweep and scans
-each amateur band individually (160m through 70cm), so even narrow bands such as
+each amateur band individually (160m through 33cm), so even narrow bands such as
 30m and 17m are finely sampled rather than being skipped by a single wide sweep.
 For each band it reports the best SWR achieved and the frequency where it occurs:
 

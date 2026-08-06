@@ -816,7 +816,7 @@ static const struct {
   {"6m",   50000000,  54000000,  21},  // 200kHz
   {"2m",   144000000, 148000000, 21},  // 200kHz
   {"70cm", 430000000, 450000000, 26},  // 800kHz
-  {"900MHz", 902000000, 928000000, 27},  // 1MHz  (US 902-928 ISM / 33cm)
+  {"33cm", 902000000, 928000000, 27},  //   1MHz  (902-928, Region 2; also ISM)
 };
 #define MULTI_SWR_BAND_COUNT (sizeof(multi_swr_bands)/sizeof(multi_swr_bands[0]))
 // Multe blanks the graph (see draw_cell), so the table uses the whole screen and
