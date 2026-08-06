@@ -2342,6 +2342,14 @@ const menuitem_t menu_measure_resonance[] = {
 };
 #endif
 
+#ifdef __S11_MULTI_SWR__
+const menuitem_t menu_measure_multi_swr[] = {
+  { MT_ADV_CALLBACK, MEASURE_NONE,          "OFF",                menu_measure_acb },
+  { MT_ADV_CALLBACK, MEASURE_S11_MULTI_SWR, "MULTI SWR\n (S11)",  menu_measure_acb },
+  { MT_NEXT, 0, NULL, menu_back } // next-> menu_back
+};
+#endif
+
 #ifdef __S21_MEASURE__
 const menuitem_t menu_measure_s21[] = {
   { MT_ADV_CALLBACK, MEASURE_NONE,        "OFF",                menu_measure_acb },
@@ -2370,6 +2378,9 @@ const menuitem_t menu_measure[] = {
 #ifdef __S11_RESONANCE_MEASURE__
   { MT_ADV_CALLBACK, MEASURE_S11_RESONANCE,"RESONANCE\n (S11)", menu_measure_acb },
 #endif
+#ifdef __S11_MULTI_SWR__
+  { MT_ADV_CALLBACK, MEASURE_S11_MULTI_SWR,"MULTI SWR\n (S11)", menu_measure_acb },
+#endif
 #ifdef __S21_MEASURE__
   { MT_ADV_CALLBACK, MEASURE_SHUNT_LC,    "SHUNT LC\n (S21)",   menu_measure_acb },
   { MT_ADV_CALLBACK, MEASURE_SERIES_LC,   "SERIES LC\n (S21)",  menu_measure_acb },
@@ -2396,6 +2407,9 @@ const menuitem_t *menu_measure_list[] = {
 #endif
 #ifdef __S11_RESONANCE_MEASURE__
   [MEASURE_S11_RESONANCE] = menu_measure_resonance,
+#endif
+#ifdef __S11_MULTI_SWR__
+  [MEASURE_S11_MULTI_SWR] = menu_measure_multi_swr,
 #endif
 };
 #endif

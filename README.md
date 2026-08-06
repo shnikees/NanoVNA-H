@@ -1,3 +1,52 @@
+Fork notice: Multé multiband SWR mode
+==========================================================
+
+This is a fork of [hugen79/NanoVNA-H](https://github.com/hugen79/NanoVNA-H)
+(itself based on [DiSlord's NanoVNA-D](https://github.com/DiSlord/NanoVNA-D)
+and [edy555/ttrftech](https://github.com/ttrftech/NanoVNA)).
+
+**Modified by n7bcn (github: shnikees).** The only change from upstream is the
+addition of a **MULTI SWR** measure mode, inspired by the RigExpert Stick Pro's
+"Multé" feature: a quick multiband antenna check that rates each amateur band
+with stars instead of making you read a chart.
+
+### What it does
+
+Select `MEASURE` -> `MULTI SWR (S11)`. The mode takes over the sweep and scans
+each amateur band individually (160m through 70cm), so even narrow bands such as
+30m and 17m are finely sampled rather than being skipped by a single wide sweep.
+For each band it reports the best SWR achieved and the frequency where it occurs:
+
+| Stars | SWR range |
+|-------|-----------|
+| `*****` | 1.00 - 1.10 |
+| `****`  | 1.10 - 1.15 |
+| `***`   | 1.15 - 1.30 |
+| `**`    | 1.30 - 1.70 |
+| `*`     | 1.70 - 3.00 |
+
+Rows are coloured green (4-5 stars), yellow (2-3) or red (1). SWR above 3.0 is
+ignored, matching the original Multé behaviour: such bands are simply omitted. If
+no band resonates, the display reads `No resonance: SWR>3 or bad ant/cable`,
+meaning the antenna's best SWR is above 3 or the antenna/coax is damaged.
+
+The graph is suppressed in this mode so the screen shows only the results table.
+Bands are scanned one per main-loop iteration to keep the UI responsive, the
+per-band minimum is median-filtered so a single noisy sample cannot set a rating,
+and star ratings use hysteresis so a band sitting on a threshold does not flicker.
+
+As with any SWR measurement, calibrate (OSL) over the range of interest first;
+the scan interpolates the calibration into each band automatically.
+
+### Changed files
+
+`measure.c`, `plot.c`, `ui.c`, `main.c`, `nanovna.h` - see the `__S11_MULTI_SWR__`
+sections. Built and tested on NanoVNA-H rev 3.7 (`TARGET=F072`).
+
+This fork remains licensed under the GNU GPL v3 or later, the same as upstream.
+
+---
+
 NanoVNA - Very tiny handheld Vector Network Analyzer
 ==========================================================
 DIY的矢量网络分析仪，原项目地址[https://github.com/ttrftech/NanoVNA](https://github.com/ttrftech/NanoVNA),修改了部分电路，增加了电池管理电路，重新设计了PCB。改进了的频率算法，可以利用si5351的奇次谐波扩展支持到900MHz的测量频率，设计了金属屏蔽片，可以减少外部干扰提高测量精度，si5351直接输出的50K-300MHz频段提供优于70dB的动态。最新版本的rev3.5版本硬件可以扩展到1.5GHz以上，更多信息请参考[NanoVNA.com](https://nanovna.com/)。

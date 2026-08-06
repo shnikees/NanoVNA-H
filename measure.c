@@ -788,5 +788,141 @@ static void prepare_s11_resonance(uint8_t type, uint8_t update_mask) {
                   STR_MEASURE_X + 3 * STR_MEASURE_WIDTH, STR_MEASURE_Y + (MEASURE_RESONANCE_COUNT + 1) * STR_MEASURE_HEIGHT);
 }
 #endif //__S11_RESONANCE_MEASURE__
+
+#ifdef __S11_MULTI_SWR__
+// Multe: quick multiband antenna check. multi_swr_run() in main.c sweeps each
+// amateur band separately (so even narrow bands are finely sampled), then stores
+// the minimum SWR found in each band here; draw rates it with stars.
+static const struct {
+  const char *name;
+  freq_t lo;
+  freq_t hi;
+} multi_swr_bands[] = {
+  {"160m", 1800000,   2000000  },
+  {"80m",  3500000,   4000000  },
+  {"60m",  5330000,   5410000  },
+  {"40m",  7000000,   7300000  },
+  {"30m",  10100000,  10150000 },
+  {"20m",  14000000,  14350000 },
+  {"17m",  18068000,  18168000 },
+  {"15m",  21000000,  21450000 },
+  {"12m",  24890000,  24990000 },
+  {"10m",  28000000,  29700000 },
+  {"6m",   50000000,  54000000 },
+  {"2m",   144000000, 148000000},
+  {"70cm", 430000000, 450000000},
+};
+#define MULTI_SWR_BAND_COUNT (sizeof(multi_swr_bands)/sizeof(multi_swr_bands[0]))
+// Multe blanks the graph (see draw_cell), so the table uses the whole screen and
+// starts near the top instead of the default measure-overlay row (STR_MEASURE_Y).
+#define MULTI_SWR_TOP (OFFSETY + 20)
+
+typedef struct {
+  float  swr[MULTI_SWR_BAND_COUNT];   // minimum SWR found in the band
+  freq_t freq[MULTI_SWR_BAND_COUNT];  // frequency of that minimum (0 = band not measured)
+} s11_multi_swr_t;
+static s11_multi_swr_t *s11_multi_swr = (s11_multi_swr_t *)measure_memory;
+
+// Interface used by the band scanner multi_swr_run() in main.c (external linkage).
+uint16_t multi_swr_band_count(void) { return MULTI_SWR_BAND_COUNT; }
+void multi_swr_band_range(uint16_t band, freq_t *lo, freq_t *hi) {
+  *lo = multi_swr_bands[band].lo;
+  *hi = multi_swr_bands[band].hi;
+}
+void multi_swr_reset(void) {
+  for (uint16_t b = 0; b < MULTI_SWR_BAND_COUNT; b++) {
+    s11_multi_swr->swr[b]  = INFINITY;
+    s11_multi_swr->freq[b] = 0;
+  }
+}
+void multi_swr_store(uint16_t band, float swr_val, freq_t freq) {
+  s11_multi_swr->swr[band]  = swr_val;
+  s11_multi_swr->freq[band] = freq;
+}
+
+// Multe star rating from the minimum SWR found in a band.
+// 5: 1.00-1.10, 4: 1.10-1.15, 3: 1.15-1.30, 2: 1.30-1.70, 1: 1.70-3.00
+// SWR above 3.0 (or infinite) is ignored -> 0 stars (no resonance in band).
+static const float multi_swr_thr[5] = {1.10f, 1.15f, 1.30f, 1.70f, 3.00f}; // for 5,4,3,2,1 stars
+static int multi_swr_stars_th(float s, float margin) {
+  if (vna_isinff(s)) return 0;
+  for (int i = 0; i < 5; i++)
+    if (s <= multi_swr_thr[i] + margin) return 5 - i;
+  return 0;
+}
+static int multi_swr_stars(float s) { return multi_swr_stars_th(s, 0.0f); }
+
+// Hysteresis: a band sitting right on a threshold would otherwise flip rating
+// (and colour) every scan. Require the SWR to clearly pass the boundary before
+// the displayed rating moves in either direction.
+#define MULTI_SWR_HYST 0.02f
+static int multi_swr_stars_hyst(float s, int cur) {
+  int up = multi_swr_stars_th(s, -MULTI_SWR_HYST);  // stricter: must clearly beat the boundary to improve
+  int dn = multi_swr_stars_th(s, +MULTI_SWR_HYST);  // looser: must clearly fall short to worsen
+  if (up > cur) return up;
+  if (dn < cur) return dn;
+  return cur;
+}
+
+// Traffic-light row colour from the star rating.
+static pixel_t multi_swr_color(int stars) {
+  if (stars >= 4) return RGB565(  0, 255,   0);  // green: great (SWR <= 1.15)
+  if (stars >= 2) return RGB565(255, 255,   0);  // yellow: ok   (SWR <= 1.70)
+  return                 RGB565(255,   0,   0);  // red: marginal (SWR <= 3.0)
+}
+
+// Current displayed rating per band (hysteresis-filtered). Written by
+// multi_swr_refresh() after each scan, read by the draw callback.
+static uint8_t multi_swr_rating[MULTI_SWR_BAND_COUNT];
+
+static void draw_s11_multi_swr(int xp, int yp) {
+  s11_multi_swr_t *m = s11_multi_swr;
+  yp -= STR_MEASURE_Y - MULTI_SWR_TOP;   // lift the whole table up to the top of the screen
+  cell_printf(xp, yp, "MULTI SWR");
+  int found = 0;
+  for (uint16_t b = 0; b < MULTI_SWR_BAND_COUNT; b++) {
+    if (m->freq[b] == 0) continue;              // band not measured yet
+    int stars = multi_swr_rating[b];            // hysteresis-filtered, set by multi_swr_refresh()
+    if (stars == 0) continue;                   // SWR > 3 ignored (no resonance)
+    found++;
+    yp += STR_MEASURE_HEIGHT;
+    char bar[6];
+    int k = 0;
+    while (k < stars) bar[k++] = '*';
+    bar[k] = 0;
+    foreground_color = multi_swr_color(stars);   // colour the whole row by rating
+    cell_printf(xp                        , yp, "%s", multi_swr_bands[b].name);
+    cell_printf(xp +     STR_MEASURE_WIDTH, yp, "%s", bar);
+    cell_printf(xp + 2 * STR_MEASURE_WIDTH, yp, "%q" S_Hz, m->freq[b]);
+  }
+  if (!found)
+    cell_printf(xp, yp + STR_MEASURE_HEIGHT, "No resonance: SWR>3 or bad ant/cable");
+}
+
+// Called by multi_swr_run() after each band-scan cycle. Repaints only the table
+// region, and only when some band's star rating changed - so a steady antenna or
+// load produces no redraw at all (no flicker, and the menu stays responsive).
+static freq_t multi_swr_shown_freq[MULTI_SWR_BAND_COUNT];
+void multi_swr_refresh(void) {
+  bool changed = false;
+  for (uint16_t b = 0; b < MULTI_SWR_BAND_COUNT; b++) {
+    uint8_t st = (s11_multi_swr->freq[b] == 0)
+               ? 0
+               : (uint8_t)multi_swr_stars_hyst(s11_multi_swr->swr[b], multi_swr_rating[b]);
+    if (st != multi_swr_rating[b]) { multi_swr_rating[b] = st; changed = true; }
+    // the displayed resonance frequency moves even when the rating is steady
+    if (s11_multi_swr->freq[b] != multi_swr_shown_freq[b]) {
+      multi_swr_shown_freq[b] = s11_multi_swr->freq[b];
+      changed = true;
+    }
+  }
+  if (changed) {
+    invalidate_rect(STR_MEASURE_X, MULTI_SWR_TOP,
+                    STR_MEASURE_X + 3 * STR_MEASURE_WIDTH,
+                    MULTI_SWR_TOP + (MULTI_SWR_BAND_COUNT + 1) * STR_MEASURE_HEIGHT);
+    request_to_redraw(REDRAW_CELLS);
+  }
+}
+#endif //__S11_MULTI_SWR__
 #pragma GCC pop_options
 #endif // __VNA_MEASURE_MODULE__

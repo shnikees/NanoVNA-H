@@ -1096,6 +1096,9 @@ static const struct {
 #ifdef __S11_RESONANCE_MEASURE__
   [MEASURE_S11_RESONANCE]= {MESAURE_S11, MEASURE_UPD_ALL,  draw_s11_resonance, prepare_s11_resonance},
 #endif
+#ifdef __S11_MULTI_SWR__
+  [MEASURE_S11_MULTI_SWR]= {MESAURE_S11, 0, draw_s11_multi_swr, NULL},  // measured by multi_swr_run() in main.c
+#endif
 };
 
 static inline void measure_set_flag(uint8_t flag) {
@@ -1414,6 +1417,14 @@ static void draw_cell(int x0, int y0) {
 #error "Write cell fill for different  LCD_PIXEL_SIZE"
 #endif
 
+#ifdef __S11_MULTI_SWR__
+  // Multe mode: suppress the graph (grid/traces/markers) - show only the star table
+  if (current_props._measure == MEASURE_S11_MULTI_SWR) {
+    cell_draw_measure(x0, y0);
+    goto draw_cell_blit;
+  }
+#endif
+
 // Draw grid
 #if 1
   // Generate grid type list
@@ -1527,6 +1538,7 @@ static void draw_cell(int x0, int y0) {
   // Draw reference position
   cell_draw_all_refpos(x0, y0);
 
+draw_cell_blit:
 #if 1
   // Need right clip cell render
   if (w < CELLWIDTH) {

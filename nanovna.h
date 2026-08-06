@@ -115,6 +115,8 @@
 #define __S11_CABLE_MEASURE__
 // Enable S11 resonance search option
 #define __S11_RESONANCE_MEASURE__
+// Enable S11 multi-band SWR (Multe-style quick multiband antenna check) option
+#define __S11_MULTI_SWR__
 #endif
 
 /*
@@ -981,6 +983,9 @@ enum {
 #ifdef __S11_RESONANCE_MEASURE__
   MEASURE_S11_RESONANCE,
 #endif
+#ifdef __S11_MULTI_SWR__
+  MEASURE_S11_MULTI_SWR,
+#endif
   MEASURE_END
 };
 #endif
@@ -1088,6 +1093,14 @@ void draw_all(void);
 void set_area_size(uint16_t w, uint16_t h);
 void plot_set_measure_mode(uint8_t mode);
 uint16_t plot_get_measure_channels(void);
+#ifdef __S11_MULTI_SWR__
+// Multe band-scanner interface (results stored in the measure module, driven from main.c)
+uint16_t multi_swr_band_count(void);
+void multi_swr_band_range(uint16_t band, freq_t *lo, freq_t *hi);
+void multi_swr_reset(void);
+void multi_swr_store(uint16_t band, float swr_val, freq_t freq);
+void multi_swr_refresh(void);
+#endif
 
 int distance_to_index(int8_t t, uint16_t idx, int16_t x, int16_t y);
 int search_nearest_index(int x, int y, int t);

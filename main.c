@@ -117,6 +117,12 @@ static void update_frequencies(void);
 static int  set_frequency(freq_t freq);
 static void set_frequencies(freq_t start, freq_t stop, uint16_t points);
 static bool sweep(bool break_on_operation, uint16_t ch_mask);
+#ifdef __S11_MULTI_SWR__
+static void multi_swr_run(void);
+static bool multi_swr_active = false;
+static uint16_t multi_swr_saved_points = 0;
+static uint16_t multi_swr_band_idx = 0;
+#endif
 static void transform_domain(uint16_t ch_mask);
 extern void lcd_setBrightness(uint16_t b);
 
@@ -127,7 +133,7 @@ static uint16_t p_sweep = 0;
 float measured[2][SWEEP_POINTS_MAX][2];
 
 #undef VERSION
-#define VERSION "1.2.50"
+#define VERSION "1.2.50-multe"
 
 // Version text, displayed in Config->Version menu, also send by info command
 const char *info_about[]={
@@ -135,6 +141,8 @@ const char *info_about[]={
   "2019-2026 Copyright NanoVNA.com",
   "based on  @DiSlord @edy555 ... source",
   "Licensed under GPL.",
+  "+ Multe multiband SWR mode",
+  "Modified by n7bcn github:shnikees",
   "Version: " VERSION " ["\
   "p:"define_to_STR(SWEEP_POINTS_MAX)", "\
   "IF:"define_to_STR(FREQUENCY_IF_K)"k, "\
@@ -240,7 +248,27 @@ static THD_FUNCTION(Thread1, arg)
     bool completed = false;
     uint16_t mask = get_sweep_mask();
     if (sweep_mode&(SWEEP_ENABLE|SWEEP_ONCE)) {
+#ifdef __S11_MULTI_SWR__
+      if (current_props._measure == MEASURE_S11_MULTI_SWR && (props_mode & DOMAIN_MODE) != DOMAIN_TIME) {
+        if (!multi_swr_active) {        // entering Multe mode: start a fresh pass
+          multi_swr_active = true;
+          multi_swr_saved_points = sweep_points;
+          multi_swr_band_idx = 0;
+          multi_swr_reset();
+        }
+        multi_swr_run();
+        completed = false;              // multi_swr_run does its own minimal repaint
+      } else {
+        if (multi_swr_active) {         // just left Multe mode: restore the user's sweep
+          multi_swr_active = false;
+          sweep_points = multi_swr_saved_points;
+          update_frequencies();
+        }
+        completed = sweep(true, mask);
+      }
+#else
       completed = sweep(true, mask);
+#endif
       sweep_mode&=~SWEEP_ONCE;
     } else {
       __WFI();
@@ -596,6 +624,9 @@ VNA_SHELL_FUNCTION(cmd_config) {
 #endif
 #ifdef __S11_RESONANCE_MEASURE__
     "|resonance" // Enable S11 resonance search option
+#endif
+#ifdef __S11_MULTI_SWR__
+    "|multiswr"  // Enable S11 multi-band SWR (Multe) option
 #endif
     ;
     int idx;
@@ -1364,6 +1395,60 @@ freq_t getFrequencyStep(void) {return _f_delta;}
 static bool needInterpolate(freq_t start, freq_t stop, uint16_t points){
   return start != cal_frequency0 || stop != cal_frequency1 || points != cal_sweep_points;
 }
+
+#ifdef __S11_MULTI_SWR__
+// Multe scan: sweep each amateur band individually (so even narrow bands get
+// fine resolution), record the minimum SWR in each, then restore the user's
+// sweep. Calibration is applied/interpolated per band, mirroring cmd_scan().
+#define MULTI_SWR_POINTS 51
+// Scans ONE band per call. Thread1 calls this once per main-loop iteration, so
+// ui_process() runs between bands and the UI stays responsive; a full pass over
+// all bands takes a few iterations. Results are written through band-by-band and
+// never cleared mid-pass, so touching the UI can't blank the table.
+static void multi_swr_run(void) {
+  uint16_t nb = multi_swr_band_count();
+  uint16_t b  = multi_swr_band_idx;
+  if (b >= nb) b = 0;
+  sweep_points = MULTI_SWR_POINTS;
+  {
+    freq_t lo, hi;
+    multi_swr_band_range(b, &lo, &hi);
+    set_frequencies(lo, hi, MULTI_SWR_POINTS);
+    uint16_t ch = SWEEP_CH0_MEASURE;
+    if (cal_status & CALSTAT_APPLY) {
+      ch |= SWEEP_APPLY_CALIBRATION;
+      if (needInterpolate(lo, hi, MULTI_SWR_POINTS)) ch |= SWEEP_USE_INTERPOLATION;
+    }
+    if (electrical_delayS11) ch |= SWEEP_APPLY_EDELAY_S11;
+    sweep(false, ch);
+    // Find the best SWR in the band, but filter first: a single noisy sample must
+    // not decide the rating. Each point is replaced by the median of itself and
+    // its two neighbours, which discards isolated outliers while leaving a real
+    // resonance dip (always several points wide) intact.
+    float  best   = INFINITY;
+    freq_t best_f = 0;
+    float  sm1 = 0.0f, sm0 = 0.0f;   // SWR of points i-2 and i-1
+    for (uint16_t i = 0; i < MULTI_SWR_POINTS; i++) {
+      float re = measured[0][i][0], im = measured[0][i][1];
+      float g  = vna_sqrtf(re * re + im * im);
+      float s  = (g < 1.0f) ? (1.0f + g) / (1.0f - g) : INFINITY;
+      if (i >= 2) {                  // median of (sm1, sm0, s) -> rating for point i-1
+        float med = sm0;
+        if ((sm1 <= sm0 && sm0 <= s) || (s <= sm0 && sm0 <= sm1))      med = sm0;
+        else if ((sm0 <= sm1 && sm1 <= s) || (s <= sm1 && sm1 <= sm0)) med = sm1;
+        else                                                           med = s;
+        if (med < best) { best = med; best_f = getFrequency(i - 1); }
+      }
+      sm1 = sm0; sm0 = s;
+    }
+    multi_swr_store(b, best, best_f);
+  }
+  multi_swr_band_idx = (b + 1 < nb) ? (b + 1) : 0;
+  // Repaint only if a rating changed (avoids full-screen redraws every cycle).
+  // The user's sweep is restored by Thread1 when the mode is exited, not here.
+  multi_swr_refresh();
+}
+#endif
 
 #define SCAN_MASK_OUT_FREQ       0b00000001
 #define SCAN_MASK_OUT_DATA0      0b00000010
