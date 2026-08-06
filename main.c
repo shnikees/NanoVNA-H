@@ -121,6 +121,7 @@ static bool sweep(bool break_on_operation, uint16_t ch_mask);
 static void multi_swr_run(void);
 static bool multi_swr_active = false;
 static uint16_t multi_swr_saved_points = 0;
+static uint16_t multi_swr_saved_bw = 0;
 static uint16_t multi_swr_band_idx = 0;
 #endif
 static void transform_domain(uint16_t ch_mask);
@@ -253,6 +254,12 @@ static THD_FUNCTION(Thread1, arg)
         if (!multi_swr_active) {        // entering Multe mode: start a fresh pass
           multi_swr_active = true;
           multi_swr_saved_points = sweep_points;
+          // Widen the IF bandwidth while scanning: dwell is (bandwidth+2)
+          // samples per point, so this cuts the scan time about threefold. The
+          // extra noise is absorbed by the median filter and the coarse star
+          // buckets. Assigned directly to avoid set_bandwidth()'s backup write.
+          multi_swr_saved_bw = config._bandwidth;
+          config._bandwidth = BANDWIDTH_4000;
           multi_swr_band_idx = 0;
           multi_swr_reset();
         }
@@ -262,7 +269,9 @@ static THD_FUNCTION(Thread1, arg)
         if (multi_swr_active) {         // just left Multe mode: restore the user's sweep
           multi_swr_active = false;
           sweep_points = multi_swr_saved_points;
+          config._bandwidth = multi_swr_saved_bw;
           update_frequencies();
+          request_to_redraw(REDRAW_FREQUENCY);
         }
         completed = sweep(true, mask);
       }
@@ -1408,15 +1417,16 @@ static void multi_swr_run(void) {
   uint16_t nb = multi_swr_band_count();
   uint16_t b  = multi_swr_band_idx;
   if (b >= nb) b = 0;
-  sweep_points = MULTI_SWR_POINTS;
+  uint16_t np = multi_swr_band_points(b);
+  sweep_points = np;
   {
     freq_t lo, hi;
     multi_swr_band_range(b, &lo, &hi);
-    set_frequencies(lo, hi, MULTI_SWR_POINTS);
+    set_frequencies(lo, hi, np);
     uint16_t ch = SWEEP_CH0_MEASURE;
     if (cal_status & CALSTAT_APPLY) {
       ch |= SWEEP_APPLY_CALIBRATION;
-      if (needInterpolate(lo, hi, MULTI_SWR_POINTS)) ch |= SWEEP_USE_INTERPOLATION;
+      if (needInterpolate(lo, hi, np)) ch |= SWEEP_USE_INTERPOLATION;
     }
     if (electrical_delayS11) ch |= SWEEP_APPLY_EDELAY_S11;
     sweep(false, ch);
@@ -1427,7 +1437,7 @@ static void multi_swr_run(void) {
     float  best   = INFINITY;
     freq_t best_f = 0;
     float  sm1 = 0.0f, sm0 = 0.0f;   // SWR of points i-2 and i-1
-    for (uint16_t i = 0; i < MULTI_SWR_POINTS; i++) {
+    for (uint16_t i = 0; i < np; i++) {
       float re = measured[0][i][0], im = measured[0][i][1];
       float g  = vna_sqrtf(re * re + im * im);
       float s  = (g < 1.0f) ? (1.0f + g) / (1.0f - g) : INFINITY;

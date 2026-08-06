@@ -793,24 +793,29 @@ static void prepare_s11_resonance(uint8_t type, uint8_t update_mask) {
 // Multe: quick multiband antenna check. multi_swr_run() in main.c sweeps each
 // amateur band separately (so even narrow bands are finely sampled), then stores
 // the minimum SWR found in each band here; draw rates it with stars.
+// Points are sized per band rather than using one count for all: a 50kHz band
+// needs far fewer than a 20MHz one. This keeps the step fine enough to catch a
+// resonance everywhere while cutting the total point count (and so the scan
+// time) by roughly a factor of three.
 static const struct {
   const char *name;
   freq_t lo;
   freq_t hi;
+  uint16_t points;
 } multi_swr_bands[] = {
-  {"160m", 1800000,   2000000  },
-  {"80m",  3500000,   4000000  },
-  {"60m",  5330000,   5410000  },
-  {"40m",  7000000,   7300000  },
-  {"30m",  10100000,  10150000 },
-  {"20m",  14000000,  14350000 },
-  {"17m",  18068000,  18168000 },
-  {"15m",  21000000,  21450000 },
-  {"12m",  24890000,  24990000 },
-  {"10m",  28000000,  29700000 },
-  {"6m",   50000000,  54000000 },
-  {"2m",   144000000, 148000000},
-  {"70cm", 430000000, 450000000},
+  {"160m", 1800000,   2000000,   11},  //  20kHz step
+  {"80m",  3500000,   4000000,   13},  //  42kHz
+  {"60m",  5330000,   5410000,    9},  //  10kHz
+  {"40m",  7000000,   7300000,   11},  //  30kHz
+  {"30m",  10100000,  10150000,   9},  //   6kHz
+  {"20m",  14000000,  14350000,  11},  //  35kHz
+  {"17m",  18068000,  18168000,   9},  //  13kHz
+  {"15m",  21000000,  21450000,  13},  //  38kHz
+  {"12m",  24890000,  24990000,   9},  //  13kHz
+  {"10m",  28000000,  29700000,  21},  //  85kHz
+  {"6m",   50000000,  54000000,  21},  // 200kHz
+  {"2m",   144000000, 148000000, 21},  // 200kHz
+  {"70cm", 430000000, 450000000, 26},  // 800kHz
 };
 #define MULTI_SWR_BAND_COUNT (sizeof(multi_swr_bands)/sizeof(multi_swr_bands[0]))
 // Multe blanks the graph (see draw_cell), so the table uses the whole screen and
@@ -829,6 +834,7 @@ void multi_swr_band_range(uint16_t band, freq_t *lo, freq_t *hi) {
   *lo = multi_swr_bands[band].lo;
   *hi = multi_swr_bands[band].hi;
 }
+uint16_t multi_swr_band_points(uint16_t band) { return multi_swr_bands[band].points; }
 void multi_swr_reset(void) {
   for (uint16_t b = 0; b < MULTI_SWR_BAND_COUNT; b++) {
     s11_multi_swr->swr[b]  = INFINITY;
@@ -922,7 +928,7 @@ void multi_swr_refresh(void) {
     // so the reading only updates when the resonance has genuinely shifted.
     if (f) f = ((f + 500) / 1000) * 1000;
     freq_t shown = multi_swr_shown_freq[b];
-    freq_t step  = (multi_swr_bands[b].hi - multi_swr_bands[b].lo) / (MULTI_SWR_POINTS - 1);
+    freq_t step  = (multi_swr_bands[b].hi - multi_swr_bands[b].lo) / (multi_swr_bands[b].points - 1);
     freq_t delta = (f > shown) ? (f - shown) : (shown - f);
     if (shown == 0 || f == 0 || delta > 2 * step) {
       multi_swr_shown_freq[b] = f;

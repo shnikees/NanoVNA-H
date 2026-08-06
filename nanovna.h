@@ -1094,11 +1094,10 @@ void set_area_size(uint16_t w, uint16_t h);
 void plot_set_measure_mode(uint8_t mode);
 uint16_t plot_get_measure_channels(void);
 #ifdef __S11_MULTI_SWR__
-// Points swept per amateur band by the Multe scanner
-#define MULTI_SWR_POINTS 51
 // Multe band-scanner interface (results stored in the measure module, driven from main.c)
 uint16_t multi_swr_band_count(void);
 void multi_swr_band_range(uint16_t band, freq_t *lo, freq_t *hi);
+uint16_t multi_swr_band_points(uint16_t band);
 void multi_swr_reset(void);
 void multi_swr_store(uint16_t band, float swr_val, freq_t freq);
 void multi_swr_refresh(void);
