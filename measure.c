@@ -816,6 +816,7 @@ static const struct {
   {"6m",   50000000,  54000000,  21},  // 200kHz
   {"2m",   144000000, 148000000, 21},  // 200kHz
   {"70cm", 430000000, 450000000, 26},  // 800kHz
+  {"900MHz", 902000000, 928000000, 27},  // 1MHz  (US 902-928 ISM / 33cm)
 };
 #define MULTI_SWR_BAND_COUNT (sizeof(multi_swr_bands)/sizeof(multi_swr_bands[0]))
 // Multe blanks the graph (see draw_cell), so the table uses the whole screen and
@@ -935,16 +936,17 @@ static void draw_s11_multi_swr(int xp, int yp) {
     cell_printf(xp, yp + STR_MEASURE_HEIGHT, "No resonance: check antenna/cable");
   }
 
-  // Legend, on fixed rows below the table so it does not move as bands appear.
-  // Each entry is drawn in the colour of the rows it describes.
-  static const struct { uint8_t rating; const char *text; } legend[] = {
-    {5, "***** <1.10"}, {4, "****  <1.15"}, {3, "***   <1.30"},
-    {2, "**    <1.70"}, {1, "*     <3.00"}, {0, "----- >3 BAD"},
+  // Legend on a fixed row below the table, so it does not move as bands appear.
+  // Each entry is drawn in the colour of the rows it describes. It is kept to a
+  // single row: with this many bands a second row would reach the status line.
+  static const struct { uint8_t rating; uint8_t col; const char *text; } legend[] = {
+    {5,  0, "5*<1.1"}, {4,  7, "4*<1.15"}, {3, 15, "3*<1.3"},
+    {2, 22, "2*<1.7"}, {1, 29, "1*<3.0"},  {0, 36, "X>3"},
   };
+  int ly = ytop + (MULTI_SWR_BAND_COUNT + 2) * STR_MEASURE_HEIGHT;
   for (int i = 0; i < 6; i++) {
-    int ly = ytop + (MULTI_SWR_BAND_COUNT + 2 + i / 3) * STR_MEASURE_HEIGHT;
     foreground_color = multi_swr_color(legend[i].rating);
-    cell_printf(xp + (i % 3) * (STR_MEASURE_WIDTH + 20), ly, "%s", legend[i].text);
+    cell_printf(xp + legend[i].col * FONT_WIDTH, ly, "%s", legend[i].text);
   }
 }
 
@@ -992,10 +994,10 @@ void multi_swr_refresh(void) {
   if (changed) {
     // Height must cover the header, every band row, the footer line below them
     // (a stale footer is otherwise left behind when it stops applying) and the
-    // two legend rows under that.
+    // legend row under that.
     invalidate_rect(STR_MEASURE_X, MULTI_SWR_TOP,
                     STR_MEASURE_X + MULTI_SWR_INVAL_W,
-                    MULTI_SWR_TOP + (MULTI_SWR_BAND_COUNT + 4) * STR_MEASURE_HEIGHT);
+                    MULTI_SWR_TOP + (MULTI_SWR_BAND_COUNT + 3) * STR_MEASURE_HEIGHT);
     request_to_redraw(REDRAW_CELLS);
   }
 }
