@@ -19,11 +19,11 @@ For each band it reports the best SWR achieved and the frequency where it occurs
 
 | Stars | SWR range |
 |-------|-----------|
-| `*****` | 1.00 - 1.10 |
-| `****`  | 1.10 - 1.15 |
-| `***`   | 1.15 - 1.30 |
-| `**`    | 1.30 - 1.70 |
-| `*`     | 1.70 - 3.00 |
+| `*****` | 1.00 - 1.20 |
+| `****`  | 1.20 - 1.30 |
+| `***`   | 1.30 - 1.70 |
+| `**`    | 1.70 - 2.00 |
+| `*`     | 2.00 - 3.00 |
 
 Rows are coloured green (4-5 stars), yellow (2-3) or red (1). SWR above 3.0 is
 ignored, matching the original Multé behaviour: such bands are simply omitted. If

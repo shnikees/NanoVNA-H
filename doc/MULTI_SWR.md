@@ -102,7 +102,7 @@ above roughly 900MHz accuracy falls off further. The firmware caps at 2GHz
 The five SWR boundaries, best first:
 
 ```c
-static const float multi_swr_thr[5] = {1.10f, 1.15f, 1.30f, 1.70f, 3.00f};
+static const float multi_swr_thr[5] = {1.20f, 1.30f, 1.70f, 2.00f, 3.00f};
 ```
 
 `multi_swr_thr[4]` (3.00) is also the pass/fail line: a band worse than this is

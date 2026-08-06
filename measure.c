@@ -896,7 +896,7 @@ void multi_swr_store(uint16_t band, float swr_val, freq_t freq) {
 // Multe star rating from the minimum SWR found in a band.
 // 5: 1.00-1.10, 4: 1.10-1.15, 3: 1.15-1.30, 2: 1.30-1.70, 1: 1.70-3.00
 // SWR above 3.0 (or infinite) is ignored -> 0 stars (no resonance in band).
-static const float multi_swr_thr[5] = {1.10f, 1.15f, 1.30f, 1.70f, 3.00f}; // for 5,4,3,2,1 stars
+static const float multi_swr_thr[5] = {1.20f, 1.30f, 1.70f, 2.00f, 3.00f}; // for 5,4,3,2,1 stars
 static int multi_swr_stars_th(float s, float margin) {
   if (vna_isinff(s)) return 0;
   for (int i = 0; i < 5; i++)
@@ -975,8 +975,8 @@ static void draw_s11_multi_swr(int xp, int yp) {
   // Each entry is drawn in the colour of the rows it describes. It is kept to a
   // single row: with this many bands a second row would reach the status line.
   static const struct { uint8_t rating; uint8_t col; const char *text; } legend[] = {
-    {5,  0, "5*<1.1"}, {4,  7, "4*<1.15"}, {3, 15, "3*<1.3"},
-    {2, 22, "2*<1.7"}, {1, 29, "1*<3.0"},  {0, 36, "X>3"},
+    {5,  0, "5*<1.2"}, {4,  7, "4*<1.3"}, {3, 14, "3*<1.7"},
+    {2, 21, "2*<2.0"}, {1, 28, "1*<3.0"}, {0, 35, "X>3"},
   };
   int ly = ytop + (MULTI_SWR_BAND_COUNT + 2) * STR_MEASURE_HEIGHT;
   for (int i = 0; i < 6; i++) {
