@@ -1,0 +1,76 @@
+name: build
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: F072
+            name: H
+            board: NanoVNA-H (rev 3.x, STM32F072)
+          - target: F303
+            name: H4
+            board: NanoVNA-H4 (rev 4.x, STM32F303)
+
+    name: ${{ matrix.name }} (${{ matrix.target }})
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gcc-arm-none-eabi libnewlib-arm-none-eabi p7zip-full
+          arm-none-eabi-gcc --version | head -1
+
+      # ChibiOS is committed as a submodule gitlink but the repository has no
+      # .gitmodules, so it cannot be fetched. The sources ship as ChibiOS.7z.
+      - name: Unpack ChibiOS
+        run: |
+          7z x -y ChibiOS.7z > /dev/null
+          test -d ChibiOS/os || { echo "ChibiOS/os missing after unpack"; exit 1; }
+
+      - name: Build
+        run: make TARGET=${{ matrix.target }} -j"$(nproc)"
+
+      - name: Report size
+        run: arm-none-eabi-size build/${{ matrix.name }}.elf
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nanovna-${{ matrix.name }}-firmware
+          path: |
+            build/${{ matrix.name }}.bin
+            build/${{ matrix.name }}.hex
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          find artifacts -type f \( -name '*.bin' -o -name '*.hex' \) -print
+          gh release create "${GITHUB_REF_NAME}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes \
+            $(find artifacts -type f \( -name '*.bin' -o -name '*.hex' \))
