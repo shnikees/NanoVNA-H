@@ -1400,7 +1400,6 @@ static bool needInterpolate(freq_t start, freq_t stop, uint16_t points){
 // Multe scan: sweep each amateur band individually (so even narrow bands get
 // fine resolution), record the minimum SWR in each, then restore the user's
 // sweep. Calibration is applied/interpolated per band, mirroring cmd_scan().
-#define MULTI_SWR_POINTS 51
 // Scans ONE band per call. Thread1 calls this once per main-loop iteration, so
 // ui_process() runs between bands and the UI stays responsive; a full pass over
 // all bands takes a few iterations. Results are written through band-by-band and

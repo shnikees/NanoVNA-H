@@ -871,19 +871,25 @@ static pixel_t multi_swr_color(int stars) {
   return                 RGB565(255,   0,   0);  // red: marginal (SWR <= 3.0)
 }
 
-// Current displayed rating per band (hysteresis-filtered). Written by
+// Current displayed rating and frequency per band. Written by
 // multi_swr_refresh() after each scan, read by the draw callback.
 static uint8_t multi_swr_rating[MULTI_SWR_BAND_COUNT];
+static freq_t  multi_swr_shown_freq[MULTI_SWR_BAND_COUNT];
+
+// The table text is wider than 3 columns: the frequency reaches ~216px and the
+// "no resonance" line ~216px, so invalidate 4 columns (240px) or stale tails are
+// left on screen. The menu starts at 241px, so this stops just short of it.
+#define MULTI_SWR_INVAL_W (4 * STR_MEASURE_WIDTH)
 
 static void draw_s11_multi_swr(int xp, int yp) {
   s11_multi_swr_t *m = s11_multi_swr;
   yp -= STR_MEASURE_Y - MULTI_SWR_TOP;   // lift the whole table up to the top of the screen
   cell_printf(xp, yp, "MULTI SWR");
   int found = 0;
+  (void)m;
   for (uint16_t b = 0; b < MULTI_SWR_BAND_COUNT; b++) {
-    if (m->freq[b] == 0) continue;              // band not measured yet
     int stars = multi_swr_rating[b];            // hysteresis-filtered, set by multi_swr_refresh()
-    if (stars == 0) continue;                   // SWR > 3 ignored (no resonance)
+    if (stars == 0) continue;                   // unmeasured, or SWR > 3 (no resonance)
     found++;
     yp += STR_MEASURE_HEIGHT;
     char bar[6];
@@ -893,7 +899,7 @@ static void draw_s11_multi_swr(int xp, int yp) {
     foreground_color = multi_swr_color(stars);   // colour the whole row by rating
     cell_printf(xp                        , yp, "%s", multi_swr_bands[b].name);
     cell_printf(xp +     STR_MEASURE_WIDTH, yp, "%s", bar);
-    cell_printf(xp + 2 * STR_MEASURE_WIDTH, yp, "%q" S_Hz, m->freq[b]);
+    cell_printf(xp + 2 * STR_MEASURE_WIDTH, yp, "%q" S_Hz, multi_swr_shown_freq[b]);
   }
   if (!found)
     cell_printf(xp, yp + STR_MEASURE_HEIGHT, "No resonance: SWR>3 or bad ant/cable");
@@ -902,23 +908,30 @@ static void draw_s11_multi_swr(int xp, int yp) {
 // Called by multi_swr_run() after each band-scan cycle. Repaints only the table
 // region, and only when some band's star rating changed - so a steady antenna or
 // load produces no redraw at all (no flicker, and the menu stays responsive).
-static freq_t multi_swr_shown_freq[MULTI_SWR_BAND_COUNT];
 void multi_swr_refresh(void) {
   bool changed = false;
   for (uint16_t b = 0; b < MULTI_SWR_BAND_COUNT; b++) {
-    uint8_t st = (s11_multi_swr->freq[b] == 0)
-               ? 0
+    freq_t f = s11_multi_swr->freq[b];
+    uint8_t st = (f == 0) ? 0
                : (uint8_t)multi_swr_stars_hyst(s11_multi_swr->swr[b], multi_swr_rating[b]);
     if (st != multi_swr_rating[b]) { multi_swr_rating[b] = st; changed = true; }
-    // the displayed resonance frequency moves even when the rating is steady
-    if (s11_multi_swr->freq[b] != multi_swr_shown_freq[b]) {
-      multi_swr_shown_freq[b] = s11_multi_swr->freq[b];
-      changed = true;
+
+    // The reported resonance point hops between adjacent sweep points on a flat
+    // or noisy load, which would repaint the table every pass. Quantise to 1kHz
+    // and only accept a new value once it has moved more than two sweep steps,
+    // so the reading only updates when the resonance has genuinely shifted.
+    if (f) f = ((f + 500) / 1000) * 1000;
+    freq_t shown = multi_swr_shown_freq[b];
+    freq_t step  = (multi_swr_bands[b].hi - multi_swr_bands[b].lo) / (MULTI_SWR_POINTS - 1);
+    freq_t delta = (f > shown) ? (f - shown) : (shown - f);
+    if (shown == 0 || f == 0 || delta > 2 * step) {
+      multi_swr_shown_freq[b] = f;
+      if (st) changed = true;       // only a visible row needs repainting
     }
   }
   if (changed) {
     invalidate_rect(STR_MEASURE_X, MULTI_SWR_TOP,
-                    STR_MEASURE_X + 3 * STR_MEASURE_WIDTH,
+                    STR_MEASURE_X + MULTI_SWR_INVAL_W,
                     MULTI_SWR_TOP + (MULTI_SWR_BAND_COUNT + 1) * STR_MEASURE_HEIGHT);
     request_to_redraw(REDRAW_CELLS);
   }
