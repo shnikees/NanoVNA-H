@@ -828,6 +828,14 @@ typedef struct {
 } s11_multi_swr_t;
 static s11_multi_swr_t *s11_multi_swr = (s11_multi_swr_t *)measure_memory;
 
+// Current displayed state per band. Written by multi_swr_refresh() after each
+// scan, read by the draw callback. Rating 0 means measured but worse than
+// SWR 3; MULTI_SWR_UNMEASURED means the band has not been swept yet.
+#define MULTI_SWR_UNMEASURED 0xFF
+static uint8_t multi_swr_rating[MULTI_SWR_BAND_COUNT];
+static freq_t  multi_swr_shown_freq[MULTI_SWR_BAND_COUNT];
+static float   multi_swr_shown_swr[MULTI_SWR_BAND_COUNT];
+
 // Interface used by the band scanner multi_swr_run() in main.c (external linkage).
 uint16_t multi_swr_band_count(void) { return MULTI_SWR_BAND_COUNT; }
 void multi_swr_band_range(uint16_t band, freq_t *lo, freq_t *hi) {
@@ -839,6 +847,9 @@ void multi_swr_reset(void) {
   for (uint16_t b = 0; b < MULTI_SWR_BAND_COUNT; b++) {
     s11_multi_swr->swr[b]  = INFINITY;
     s11_multi_swr->freq[b] = 0;
+    multi_swr_rating[b]     = MULTI_SWR_UNMEASURED;
+    multi_swr_shown_freq[b] = 0;
+    multi_swr_shown_swr[b]  = INFINITY;
   }
 }
 void multi_swr_store(uint16_t band, float swr_val, freq_t freq) {
@@ -872,15 +883,12 @@ static int multi_swr_stars_hyst(float s, int cur) {
 
 // Traffic-light row colour from the star rating.
 static pixel_t multi_swr_color(int stars) {
-  if (stars >= 4) return RGB565(  0, 255,   0);  // green: great (SWR <= 1.15)
-  if (stars >= 2) return RGB565(255, 255,   0);  // yellow: ok   (SWR <= 1.70)
-  return                 RGB565(255,   0,   0);  // red: marginal (SWR <= 3.0)
+  if (stars >= 4) return RGB565(  0, 255,   0);  // green:  great    (SWR <= 1.15)
+  if (stars >= 2) return RGB565(255, 255,   0);  // yellow: ok       (SWR <= 1.70)
+  if (stars == 1) return RGB565(255, 160,   0);  // orange: marginal (SWR <= 3.0)
+  return                 RGB565(255,   0,   0);  // red:    failing  (SWR >  3.0)
 }
 
-// Current displayed rating and frequency per band. Written by
-// multi_swr_refresh() after each scan, read by the draw callback.
-static uint8_t multi_swr_rating[MULTI_SWR_BAND_COUNT];
-static freq_t  multi_swr_shown_freq[MULTI_SWR_BAND_COUNT];
 
 // The table text is wider than 3 columns: the frequency reaches ~216px and the
 // "no resonance" line ~216px, so invalidate 4 columns (240px) or stale tails are
@@ -888,27 +896,56 @@ static freq_t  multi_swr_shown_freq[MULTI_SWR_BAND_COUNT];
 #define MULTI_SWR_INVAL_W (4 * STR_MEASURE_WIDTH)
 
 static void draw_s11_multi_swr(int xp, int yp) {
-  s11_multi_swr_t *m = s11_multi_swr;
   yp -= STR_MEASURE_Y - MULTI_SWR_TOP;   // lift the whole table up to the top of the screen
+  const int ytop = yp;                   // keep the table origin for the fixed legend rows
   cell_printf(xp, yp, "MULTI SWR");
-  int found = 0;
-  (void)m;
+  int shown = 0, good = 0;
   for (uint16_t b = 0; b < MULTI_SWR_BAND_COUNT; b++) {
-    int stars = multi_swr_rating[b];            // hysteresis-filtered, set by multi_swr_refresh()
-    if (stars == 0) continue;                   // unmeasured, or SWR > 3 (no resonance)
-    found++;
+    uint8_t stars = multi_swr_rating[b];        // hysteresis-filtered, set by multi_swr_refresh()
+    if (stars == MULTI_SWR_UNMEASURED) continue;
+    shown++;
     yp += STR_MEASURE_HEIGHT;
+    foreground_color = multi_swr_color(stars);  // colour the whole row by rating
+    cell_printf(xp, yp, "%s", multi_swr_bands[b].name);
+    if (stars == 0) {
+      // Band is worse than SWR 3. Keep it on screen in red rather than hiding it,
+      // so a band that is degrading stays visible, and show how bad it actually is.
+      cell_printf(xp +     STR_MEASURE_WIDTH, yp, "-----");
+      if (vna_isinff(multi_swr_shown_swr[b]) || multi_swr_shown_swr[b] > 99.0f)
+        cell_printf(xp + 2 * STR_MEASURE_WIDTH, yp, "SWR >99");
+      else
+        cell_printf(xp + 2 * STR_MEASURE_WIDTH, yp, "SWR %.1f", multi_swr_shown_swr[b]);
+      continue;
+    }
+    good++;
     char bar[6];
     int k = 0;
     while (k < stars) bar[k++] = '*';
     bar[k] = 0;
-    foreground_color = multi_swr_color(stars);   // colour the whole row by rating
-    cell_printf(xp                        , yp, "%s", multi_swr_bands[b].name);
     cell_printf(xp +     STR_MEASURE_WIDTH, yp, "%s", bar);
     cell_printf(xp + 2 * STR_MEASURE_WIDTH, yp, "%q" S_Hz, multi_swr_shown_freq[b]);
   }
-  if (!found)
-    cell_printf(xp, yp + STR_MEASURE_HEIGHT, "No resonance: SWR>3 or bad ant/cable");
+  if (shown == 0) {
+    foreground_color = GET_PALTETTE_COLOR(LCD_MEASURE_COLOR);
+    cell_printf(xp, yp + STR_MEASURE_HEIGHT, "Scanning...");
+  } else if (good == 0) {
+    // Nothing resonates anywhere: per the original Multe, that means the antenna
+    // is worse than SWR 3 everywhere or the antenna/coax is damaged.
+    foreground_color = multi_swr_color(0);
+    cell_printf(xp, yp + STR_MEASURE_HEIGHT, "No resonance: check antenna/cable");
+  }
+
+  // Legend, on fixed rows below the table so it does not move as bands appear.
+  // Each entry is drawn in the colour of the rows it describes.
+  static const struct { uint8_t rating; const char *text; } legend[] = {
+    {5, "***** <1.10"}, {4, "****  <1.15"}, {3, "***   <1.30"},
+    {2, "**    <1.70"}, {1, "*     <3.00"}, {0, "----- >3 BAD"},
+  };
+  for (int i = 0; i < 6; i++) {
+    int ly = ytop + (MULTI_SWR_BAND_COUNT + 2 + i / 3) * STR_MEASURE_HEIGHT;
+    foreground_color = multi_swr_color(legend[i].rating);
+    cell_printf(xp + (i % 3) * (STR_MEASURE_WIDTH + 20), ly, "%s", legend[i].text);
+  }
 }
 
 // Called by multi_swr_run() after each band-scan cycle. Repaints only the table
@@ -918,27 +955,47 @@ void multi_swr_refresh(void) {
   bool changed = false;
   for (uint16_t b = 0; b < MULTI_SWR_BAND_COUNT; b++) {
     freq_t f = s11_multi_swr->freq[b];
-    uint8_t st = (f == 0) ? 0
-               : (uint8_t)multi_swr_stars_hyst(s11_multi_swr->swr[b], multi_swr_rating[b]);
-    if (st != multi_swr_rating[b]) { multi_swr_rating[b] = st; changed = true; }
+    float  s = s11_multi_swr->swr[b];
+    uint8_t cur = multi_swr_rating[b];
+    uint8_t st;
+    if (f == 0)                        st = MULTI_SWR_UNMEASURED;   // not swept yet
+    else if (cur == MULTI_SWR_UNMEASURED) st = (uint8_t)multi_swr_stars(s);  // first reading
+    else                               st = (uint8_t)multi_swr_stars_hyst(s, cur);
+    if (st != cur) { multi_swr_rating[b] = st; changed = true; }
+    if (st == MULTI_SWR_UNMEASURED) continue;
+
+    if (st == 0) {
+      // Failing band: the row shows the numeric SWR, so track that instead of a
+      // meaningless resonance point. 0.1 deadband keeps it from repainting on noise.
+      float prev = multi_swr_shown_swr[b];
+      float d = (s > prev) ? (s - prev) : (prev - s);
+      if (vna_isinff(prev) != vna_isinff(s) || (!vna_isinff(s) && d > 0.1f)) {
+        multi_swr_shown_swr[b] = s;
+        changed = true;
+      }
+      continue;
+    }
 
     // The reported resonance point hops between adjacent sweep points on a flat
     // or noisy load, which would repaint the table every pass. Quantise to 1kHz
     // and only accept a new value once it has moved more than two sweep steps,
     // so the reading only updates when the resonance has genuinely shifted.
-    if (f) f = ((f + 500) / 1000) * 1000;
+    f = ((f + 500) / 1000) * 1000;
     freq_t shown = multi_swr_shown_freq[b];
     freq_t step  = (multi_swr_bands[b].hi - multi_swr_bands[b].lo) / (multi_swr_bands[b].points - 1);
     freq_t delta = (f > shown) ? (f - shown) : (shown - f);
-    if (shown == 0 || f == 0 || delta > 2 * step) {
+    if (shown == 0 || delta > 2 * step) {
       multi_swr_shown_freq[b] = f;
-      if (st) changed = true;       // only a visible row needs repainting
+      changed = true;
     }
   }
   if (changed) {
+    // Height must cover the header, every band row, the footer line below them
+    // (a stale footer is otherwise left behind when it stops applying) and the
+    // two legend rows under that.
     invalidate_rect(STR_MEASURE_X, MULTI_SWR_TOP,
                     STR_MEASURE_X + MULTI_SWR_INVAL_W,
-                    MULTI_SWR_TOP + (MULTI_SWR_BAND_COUNT + 1) * STR_MEASURE_HEIGHT);
+                    MULTI_SWR_TOP + (MULTI_SWR_BAND_COUNT + 4) * STR_MEASURE_HEIGHT);
     request_to_redraw(REDRAW_CELLS);
   }
 }
